@@ -1,15 +1,9 @@
-import mysql.connector
+import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 
 def aggregate_daily():
-    conn = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Manasa@1232425",
-        database="nifty_data"
-    )
-
+    conn = sqlite3.connect("nifty50.db")
     df = pd.read_sql("SELECT * FROM nifty50_raw", conn)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     df['date'] = df['timestamp'].dt.date
@@ -26,34 +20,21 @@ def aggregate_daily():
     daily_agg['MA_5'] = daily_agg.groupby('symbol')['close_price'].transform(lambda x: x.rolling(5).mean())
     daily_agg['MA_10'] = daily_agg.groupby('symbol')['close_price'].transform(lambda x: x.rolling(10).mean())
 
-    # Create daily table if not exists
     cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS nifty50_daily (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        symbol VARCHAR(10),
-        date DATE,
-        open_price DECIMAL(10,2),
-        high_price DECIMAL(10,2),
-        low_price DECIMAL(10,2),
-        close_price DECIMAL(10,2),
-        volume BIGINT,
-        MA_5 DECIMAL(10,2),
-        MA_10 DECIMAL(10,2)
-    )
-    """)
-    conn.commit()
 
+    # Insert aggregated data
     for i, row in daily_agg.iterrows():
         cursor.execute("""
-        INSERT INTO nifty50_daily (symbol, date, open_price, high_price, low_price, close_price, volume, MA_5, MA_10)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (row['symbol'], row['date'], row['open_price'], row['high_price'], row['low_price'], row['close_price'], row['volume'], row['MA_5'], row['MA_10']))
+            INSERT INTO nifty50_daily
+            (symbol, date, open_price, high_price, low_price, close_price, volume, MA_5, MA_10)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (row['symbol'], row['date'], row['open_price'], row['high_price'], row['low_price'],
+              row['close_price'], row['volume'], row['MA_5'], row['MA_10']))
     conn.commit()
 
     # Delete raw data older than 30 days
     cutoff = datetime.now() - timedelta(days=30)
-    cursor.execute("DELETE FROM nifty50_raw WHERE timestamp < %s", (cutoff,))
+    cursor.execute("DELETE FROM nifty50_raw WHERE timestamp < ?", (cutoff,))
     conn.commit()
 
     cursor.close()
