@@ -1,25 +1,17 @@
 import yfinance as yf
-import mysql.connector
+import sqlite3
 from datetime import datetime
 
-# List of Nifty 50 symbols (update if necessary)
-nifty_50_symbols = [
-    "TCS","INFY","RELIANCE","HDFCBANK","HINDUNILVR","ICICIBANK","KOTAKBANK",
+nifty_50_symbols = ["TCS","INFY","RELIANCE","HDFCBANK","HINDUNILVR","ICICIBANK","KOTAKBANK",
     "LT","AXISBANK","ITC","SBIN","BHARTIARTL","HCLTECH","BAJFINANCE","BAJAJFINSV",
     "MARUTI","TECHM","WIPRO","SUNPHARMA","TITAN","ONGC","HINDALCO","ULTRACEMCO",
     "NESTLEIND","POWERGRID","ADANIENT","M&M","HDFC","JSWSTEEL","COALINDIA","GRASIM",
     "EICHERMOT","DRREDDY","BPCL","TATAMOTORS","BRITANNIA","DIVISLAB","SHREECEM",
     "TATAPOWER","UPL","GAIL","CIPLA","HINDUNILVR","ZEEL","BAJAJ-AUTO","ASIANPAINT",
-    "ADANIPORTS","TECHM"
-]
+    "ADANIPORTS","TECHM"]
 
 def fetch_live_data():
-  conn = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Manasa@1232425",
-        database="nifty_data"
-    )
+    conn = sqlite3.connect("nifty50.db")
     cursor = conn.cursor()
 
     for symbol in nifty_50_symbols:
@@ -35,11 +27,11 @@ def fetch_live_data():
             close_price = float(latest['Close'].values[0])
             volume = int(latest['Volume'].values[0])
 
-            sql = """
-            INSERT INTO nifty50_raw (symbol, timestamp, open_price, high_price, low_price, close_price, volume)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """
-            cursor.execute(sql, (symbol, timestamp, open_price, high_price, low_price, close_price, volume))
+            cursor.execute("""
+                INSERT INTO nifty50_raw 
+                (symbol, timestamp, open_price, high_price, low_price, close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (symbol, timestamp, open_price, high_price, low_price, close_price, volume))
             conn.commit()
         except Exception as e:
             print(f"Error fetching {symbol}: {e}")
@@ -50,3 +42,4 @@ def fetch_live_data():
 
 if __name__ == "__main__":
     fetch_live_data()
+
