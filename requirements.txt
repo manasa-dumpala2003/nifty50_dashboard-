@@ -1,5 +1,5 @@
 yfinance
 pandas
-mysql-connector-python
 streamlit
 schedule
+
