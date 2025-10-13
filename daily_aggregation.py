@@ -6,7 +6,7 @@ def aggregate_daily():
     conn = mysql.connector.connect(
         host="localhost",
         user="root",
-        password="your_password",
+        password="Manasa@1232425",
         database="nifty_data"
     )
 
