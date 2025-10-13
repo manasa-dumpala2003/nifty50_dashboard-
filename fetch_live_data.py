@@ -14,10 +14,10 @@ nifty_50_symbols = [
 ]
 
 def fetch_live_data():
-    conn = mysql.connector.connect(
+  conn = mysql.connector.connect(
         host="localhost",
         user="root",
-        password="your_password",
+        password="Manasa@1232425",
         database="nifty_data"
     )
     cursor = conn.cursor()
