@@ -21,8 +21,6 @@ nifty_50_symbols = [
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-
-    # Create raw data table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS nifty50_raw (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,8 +33,6 @@ def init_db():
         volume INTEGER
     )
     """)
-
-    # Create daily aggregated table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS nifty50_daily (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +56,12 @@ def fetch_live_data(cursor, conn):
         try:
             stock = yf.Ticker(symbol + ".NS")
             data = stock.history(period="1d", interval="2m")
+
+            # Skip if no data
+            if data.empty:
+                st.warning(f"No data returned for {symbol}. Skipping.")
+                continue
+
             latest = data.tail(1)
             timestamp = latest.index[0].to_pydatetime()
             open_price = float(latest['Open'].values[0])
@@ -69,10 +71,11 @@ def fetch_live_data(cursor, conn):
             volume = int(latest['Volume'].values[0])
 
             cursor.execute("""
-            INSERT INTO nifty50_raw (symbol, timestamp, open_price, high_price, low_price, close_price, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO nifty50_raw (symbol, timestamp, open_price, high_price, low_price, close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (symbol, timestamp, open_price, high_price, low_price, close_price, volume))
             conn.commit()
+
         except Exception as e:
             st.warning(f"Error fetching {symbol}: {e}")
 
@@ -80,10 +83,10 @@ def fetch_live_data(cursor, conn):
 def aggregate_daily_data(cursor, conn):
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
     cursor.execute("SELECT COUNT(*) FROM nifty50_daily WHERE date = ?", (yesterday,))
-    daily_count = cursor.fetchone()[0]
-
-    if daily_count == 0:
+    if cursor.fetchone()[0] == 0:
         df = pd.read_sql("SELECT * FROM nifty50_raw", conn)
+        if df.empty:
+            return
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['date'] = df['timestamp'].dt.date
         daily_agg = df.groupby(['symbol','date']).agg(
@@ -96,11 +99,11 @@ def aggregate_daily_data(cursor, conn):
         daily_agg['MA_5'] = daily_agg.groupby('symbol')['close_price'].transform(lambda x: x.rolling(5).mean())
         daily_agg['MA_10'] = daily_agg.groupby('symbol')['close_price'].transform(lambda x: x.rolling(10).mean())
 
-        for i, row in daily_agg.iterrows():
+        for _, row in daily_agg.iterrows():
             cursor.execute("""
-            INSERT INTO nifty50_daily
-            (symbol, date, open_price, high_price, low_price, close_price, volume, MA_5, MA_10)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO nifty50_daily
+                (symbol, date, open_price, high_price, low_price, close_price, volume, MA_5, MA_10)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (row['symbol'], row['date'], row['open_price'], row['high_price'], row['low_price'],
                   row['close_price'], row['volume'], row['MA_5'], row['MA_10']))
         conn.commit()
@@ -111,20 +114,16 @@ def cleanup_old_raw_data(cursor, conn, days=30):
     cursor.execute("DELETE FROM nifty50_raw WHERE timestamp < ?", (cutoff,))
     conn.commit()
 
-# ---------- DASHBOARD ----------
+# ---------- STREAMLIT DASHBOARD ----------
 st.set_page_config(page_title="📈 Nifty 50 Dashboard", layout="wide")
 st.title("📊 Nifty 50 Live & Daily Dashboard (Auto-Refresh)")
 
 # Initialize DB
 conn, cursor = init_db()
 
-# Fetch live data
+# Fetch live data, aggregate, cleanup
 fetch_live_data(cursor, conn)
-
-# Aggregate daily data
 aggregate_daily_data(cursor, conn)
-
-# Cleanup old raw data only
 cleanup_old_raw_data(cursor, conn, days=30)
 
 # Load data for dashboard
@@ -139,7 +138,6 @@ conn.close()
 
 # ---------- DASHBOARD INTERFACE ----------
 if not daily_df.empty and not latest_df.empty:
-    # Select stock
     symbols = daily_df['symbol'].unique().tolist()
     selected_symbol = st.selectbox("Select Stock", symbols)
 
@@ -154,25 +152,14 @@ if not daily_df.empty and not latest_df.empty:
     st.metric("5-Day MA", round(stock_daily['MA_5'],2))
     st.metric("10-Day MA", round(stock_daily['MA_10'],2))
 
-    # Live chart last 30 mins with auto-refresh
+    # Live chart last 30 mins
     st.subheader(f"Live Price (Last 30 mins) for {selected_symbol}")
     chart_placeholder = st.empty()
 
-    # Auto-refresh live chart every 60 seconds
-    refresh_count = st.slider("Number of Refreshes", 1, 30, 10)
-    for _ in range(refresh_count):
-        conn = sqlite3.connect(DB_NAME)
-        latest_df = pd.read_sql("""
-        SELECT * FROM nifty50_raw 
-        WHERE symbol=? AND timestamp >= datetime('now','-30 minutes')
-        ORDER BY timestamp ASC
-        """, conn, params=(selected_symbol,))
-        conn.close()
-
-        if not latest_df.empty:
-            latest_df['timestamp'] = pd.to_datetime(latest_df['timestamp'])
-            chart_placeholder.line_chart(latest_df.set_index('timestamp')['close_price'])
-        time.sleep(60)  # refresh every minute
+    latest_df = latest_df[latest_df['symbol']==selected_symbol]
+    latest_df['timestamp'] = pd.to_datetime(latest_df['timestamp'])
+    if not latest_df.empty:
+        chart_placeholder.line_chart(latest_df.set_index('timestamp')['close_price'])
 
     # Top gainers & losers
     st.subheader("🔥 Top Gainers & Losers Yesterday")
@@ -185,6 +172,6 @@ if not daily_df.empty and not latest_df.empty:
     col1.dataframe(top_gainers[['symbol','pct_change']])
     col2.write("Top Losers")
     col2.dataframe(top_losers[['symbol','pct_change']])
+
 else:
     st.info("Data will appear after fetching live and aggregated daily data.")
-
