@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 # MySQL Connection
 # ======================
 conn = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="your_password",
-    database="nifty_data"
+        host="localhost",
+        user="root",
+        password="Manasa@1232425",
+        database="nifty_data"
 )
 
 # Load yesterday's aggregated data
