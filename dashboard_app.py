@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 conn = sqlite3.connect("nifty50.db")
 
 # Yesterday's aggregated data
-yesterday = (datetime.now() - timedelta(days=1)).date()
+yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 daily_df = pd.read_sql(f"SELECT * FROM nifty50_daily WHERE date='{yesterday}'", conn)
 
 # Last 30 mins live data
